@@ -54,6 +54,71 @@ app.post('/api/grade-answer', async (req, res) => {
     res.status(500).json({ error: 'Failed to grade answer' });
   }
 });
+// Route 3: Summarize Notes
+app.post('/api/summarize', async (req, res) => {
+  try {
+    const { text } = req.body;
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    
+    const prompt = `You are a study assistant. Summarize the following notes into clear, concise bullet points that a college student can quickly review. Keep it short but cover all key concepts. Use simple language.
+
+Notes:
+${text}`;
+    
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    
+    res.json({ summary: response.text().trim() });
+  } catch (error) {
+    console.error("AI Summary Error:", error);
+    res.status(500).json({ error: 'Failed to summarize' });
+  }
+});
+
+// Route 4: AI Reframe (Simple Analogy)
+app.post('/api/reframe', async (req, res) => {
+  try {
+    const { text } = req.body;
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    
+    const prompt = `A student is struggling to understand this concept. Explain it in the simplest possible way using a real-world analogy or everyday example. Make it feel like a friendly tutor explaining to a beginner. Keep it under 4 sentences.
+
+Concept:
+${text}`;
+    
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    
+    res.json({ reframe: response.text().trim() });
+  } catch (error) {
+    console.error("AI Reframe Error:", error);
+    res.status(500).json({ error: 'Failed to reframe' });
+  }
+});
+
+// Route 5: YouTube Search
+app.post('/api/youtube-search', async (req, res) => {
+  try {
+    const { topic } = req.body;
+    const API_KEY = process.env.YOUTUBE_API_KEY;
+    
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(topic + " tutorial explanation")}&type=video&maxResults=3&key=${API_KEY}`;
+    
+    const response = await fetch(searchUrl);
+    const data = await response.json();
+    
+    const videos = data.items.map(item => ({
+      videoId: item.id.videoId,
+      title: item.snippet.title,
+      thumbnail: item.snippet.thumbnails.medium.url
+    }));
+    
+    res.json({ videos });
+  } catch (error) {
+    console.error("YouTube Search Error:", error);
+    res.status(500).json({ error: 'Failed to search YouTube' });
+  }
+});
 
 const PORT = 5000;
 app.listen(PORT, () => {

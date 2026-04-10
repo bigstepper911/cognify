@@ -12,7 +12,7 @@
     "@testing-library/user-event": "^13.5.0",
     "firebase": "^12.11.0",
     "lucide-react": "^1.7.0",
-    "pdfjs-dist": "^5.5.207",
+    "pdfjs-dist": "^5.6.205",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.2",

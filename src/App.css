@@ -1,38 +1,420 @@
-.App {
+/* ========================================
+   COGNIFY — COMPLETE DESIGN SYSTEM
+   ======================================== */
+
+/* --- GOOGLE FONTS (OpenDyslexic loaded via CDN) --- */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.cdnfonts.com/css/opendyslexic');
+
+/* --- BASE RESET --- */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #f4f4f9;
+  color: #1a1a2e;
+  transition: all 0.3s ease;
+}
+
+/* --- HIGH CONTRAST MODE --- */
+body.high-contrast {
+  background-color: #000000 !important;
+  color: #ffff00 !important;
+}
+
+body.high-contrast .cognify-card {
+  background-color: #1a1a1a !important;
+  border: 2px solid #ffff00 !important;
+  color: #ffff00 !important;
+}
+
+body.high-contrast .cognify-btn-primary {
+  background-color: #ffff00 !important;
+  color: #000000 !important;
+}
+
+body.high-contrast .cognify-btn-secondary {
+  background-color: #000000 !important;
+  color: #ffff00 !important;
+  border: 2px solid #ffff00 !important;
+}
+
+body.high-contrast .cognify-header {
+  background-color: #1a1a1a !important;
+  border: 2px solid #ffff00 !important;
+}
+
+body.high-contrast h1, body.high-contrast h2, body.high-contrast h3, body.high-contrast h4 {
+  color: #ffff00 !important;
+}
+
+body.high-contrast p, body.high-contrast span, body.high-contrast label {
+  color: #ffff00 !important;
+}
+
+body.high-contrast input, body.high-contrast textarea {
+  background-color: #1a1a1a !important;
+  color: #ffff00 !important;
+  border: 2px solid #ffff00 !important;
+}
+
+/* --- DYSLEXIA FONT MODE --- */
+body.dyslexia-font, body.dyslexia-font * {
+  font-family: 'OpenDyslexic', 'Comic Sans MS', sans-serif !important;
+  letter-spacing: 0.05em;
+  word-spacing: 0.1em;
+  line-height: 1.8 !important;
+}
+
+/* --- REUSABLE COMPONENT CLASSES --- */
+
+/* Cards */
+.cognify-card {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(75, 0, 130, 0.06);
+  border: 1px solid #e8e4ef;
+  transition: all 0.3s ease;
+}
+
+.cognify-card:hover {
+  box-shadow: 0 8px 30px rgba(75, 0, 130, 0.12);
+  transform: translateY(-2px);
+}
+
+/* Header Bar */
+.cognify-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #ffffff;
+  padding: 16px 28px;
+  border-radius: 16px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04);
+  margin-bottom: 30px;
+}
+
+/* Primary Button */
+.cognify-btn-primary {
+  padding: 12px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #4b0082, #6a1b9a);
+  border: none;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(75, 0, 130, 0.25);
+}
+
+.cognify-btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(75, 0, 130, 0.35);
+}
+
+/* Secondary Button */
+.cognify-btn-secondary {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #4b0082;
+  background-color: #f3ebf8;
+  border: 2px solid #e0d0ec;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.cognify-btn-secondary:hover {
+  background-color: #e8d5f5;
+  transform: translateY(-1px);
+}
+
+/* Danger Button */
+.cognify-btn-danger {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #ffffff;
+  background-color: #e74c3c;
+  border: none;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.cognify-btn-danger:hover {
+  background-color: #c0392b;
+}
+
+/* Success Button */
+.cognify-btn-success {
+  padding: 12px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #ffffff;
+  background-color: #2ecc71;
+  border: none;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.cognify-btn-success:hover {
+  background-color: #27ae60;
+}
+
+/* Focus Coins Badge */
+.cognify-coins {
+  padding: 10px 18px;
+  background: linear-gradient(135deg, #ffd700, #ffb800);
+  color: #333;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(255, 215, 0, 0.3);
+}
+
+/* Status Badge */
+.cognify-status {
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.cognify-status.focused { background-color: #d4edda; color: #155724; }
+.cognify-status.distracted { background-color: #f8d7da; color: #721c24; }
+.cognify-status.remediation { background-color: #fff3cd; color: #856404; }
+
+/* Mode Selection Cards */
+.cognify-mode-card {
+  padding: 30px;
+  width: 260px;
+  cursor: pointer;
+  border-radius: 16px;
+  border: 2px solid #e8e4ef;
+  background-color: #ffffff;
+  transition: all 0.3s ease;
   text-align: center;
 }
 
-.App-logo {
-  height: 40vmin;
+.cognify-mode-card:hover {
+  border-color: #4b0082;
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(75, 0, 130, 0.15);
+}
+
+/* Overlay (for quizzes, videos) */
+.cognify-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(8px);
+  padding: 20px;
+}
+
+/* Quiz Card */
+.cognify-quiz-card {
+  background-color: #ffffff;
+  padding: 40px;
+  border-radius: 20px;
+  border: 3px solid #e74c3c;
+  max-width: 600px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.4s ease;
+}
+
+/* Input Field */
+.cognify-input {
+  padding: 14px 18px;
+  width: 100%;
+  border-radius: 12px;
+  border: 2px solid #e0e0e0;
+  font-size: 16px;
+  font-family: inherit;
+  transition: border-color 0.3s ease;
+  outline: none;
+}
+
+.cognify-input:focus {
+  border-color: #4b0082;
+  box-shadow: 0 0 0 3px rgba(75, 0, 130, 0.1);
+}
+
+/* Reading Content Area */
+.cognify-reading-area {
+  line-height: 2;
+  color: #333;
+  font-size: 1.15rem;
+  padding: 30px;
+  transition: filter 0.3s ease;
+}
+
+/* Focus Timeline Bar */
+.cognify-focus-bar {
+  height: 8px;
+  border-radius: 4px;
+  background-color: #e0e0e0;
+  overflow: hidden;
+  margin: 10px 0;
+}
+
+.cognify-focus-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease, background-color 0.3s ease;
+}
+
+/* Accessibility Settings Panel */
+.cognify-settings-panel {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  border: 1px solid #e8e4ef;
+  box-shadow: 0 4px 20px rgba(75, 0, 130, 0.06);
+}
+
+.cognify-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.cognify-toggle-row:last-child {
+  border-bottom: none;
+}
+
+/* iOS-Style Toggle Switch */
+.cognify-switch {
+  width: 50px;
+  height: 28px;
+  border-radius: 14px;
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.cognify-switch-knob {
+  width: 24px;
+  height: 24px;
+  background-color: white;
+  border-radius: 50%;
+  position: absolute;
+  top: 2px;
+  transition: left 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* Animations */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes coinPop {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  50% { transform: translateY(-30px) scale(1.3); opacity: 0.8; }
+  100% { transform: translateY(-60px) scale(0.8); opacity: 0; }
+}
+
+.coin-animation {
+  animation: coinPop 1s ease forwards;
+  position: absolute;
+  font-size: 24px;
   pointer-events: none;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+.pulse-glow {
+  animation: pulse 2s ease-in-out infinite;
 }
 
-.App-link {
-  color: #61dafb;
+/* Video Card */
+.cognify-video-card {
+  background: #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e0e0e0;
+  transition: all 0.3s ease;
+  cursor: pointer;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.cognify-video-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4b0082;
+  border-radius: 3px;
+}
+
+/* Paragraph Highlight (current reading chunk) */
+.cognify-paragraph {
+  padding: 16px 20px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  transition: all 0.3s ease;
+  border-left: 4px solid transparent;
+}
+
+.cognify-paragraph.active {
+  background-color: #f3ebf8;
+  border-left-color: #4b0082;
+}
+
+.cognify-paragraph.completed {
+  opacity: 0.5;
 }
