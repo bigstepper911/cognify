@@ -14,7 +14,13 @@ const ListenMode = () => {
 
   const paragraphs = JSON.parse(localStorage.getItem("cognify_paragraphs") || "[]");
   const [summary] = useState(localStorage.getItem("cognify_summary") || "");
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    const saved = localStorage.getItem("cognify_listen_progress");
+    return saved ? parseInt(saved, 10) : 0;
+  });
+  useEffect(() => {
+    localStorage.setItem("cognify_listen_progress", currentIndex);
+  }, [currentIndex]);
   const [readingMode, setReadingMode] = useState("full");
   const currentParagraph = paragraphs[currentIndex] || "Please go back and upload a PDF first!";
 

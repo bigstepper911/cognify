@@ -83,6 +83,8 @@ const Home = () => {
 
         localStorage.setItem("cognify_learning_text", fullText.trim());
         localStorage.setItem("cognify_paragraphs", JSON.stringify(paragraphs));
+        localStorage.removeItem("cognify_read_progress");
+        localStorage.removeItem("cognify_listen_progress");
         localStorage.removeItem("cognify_summary");
         
         setIsUploaded(true);

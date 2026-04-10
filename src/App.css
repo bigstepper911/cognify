@@ -596,3 +596,424 @@ div[style*="background: rgb(26, 26, 46)"]::-webkit-scrollbar {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+/* ========================================
+   COGNIFY — PREMIUM VISUAL EFFECTS
+   ======================================== */
+
+/* === ANIMATED GRADIENT BACKGROUND === */
+body {
+  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 25%, #f0ebf8 50%, #e8e4ef 75%, #f5f3ff 100%);
+  background-size: 400% 400%;
+  animation: bgShift 15s ease infinite;
+}
+
+@keyframes bgShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* === GLASSMORPHISM CARDS === */
+.cognify-card {
+  background: rgba(255, 255, 255, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+  box-shadow: 
+    0 8px 32px rgba(75, 0, 130, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+}
+
+.cognify-card:hover {
+  box-shadow: 
+    0 16px 48px rgba(75, 0, 130, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+  transform: translateY(-3px);
+}
+
+/* === GLASSMORPHISM HEADER === */
+.cognify-header {
+  background: rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  border-top: 3px solid;
+  border-image: linear-gradient(90deg, #4b0082, #9b59b6, #e74c3c, #f39c12, #2ecc71, #4b0082) 1;
+  box-shadow: 0 4px 30px rgba(75, 0, 130, 0.06) !important;
+}
+
+/* === FLOATING PARTICLES BACKGROUND (pure CSS) === */
+body::before,
+body::after {
+  content: '';
+  position: fixed;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+  filter: blur(80px);
+  opacity: 0.4;
+}
+
+body::before {
+  background: radial-gradient(circle, rgba(75, 0, 130, 0.3), transparent 70%);
+  top: -100px;
+  right: -100px;
+  animation: floatBlob1 20s ease-in-out infinite;
+}
+
+body::after {
+  background: radial-gradient(circle, rgba(46, 204, 113, 0.25), transparent 70%);
+  bottom: -100px;
+  left: -100px;
+  animation: floatBlob2 25s ease-in-out infinite;
+}
+
+@keyframes floatBlob1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-80px, 60px) scale(1.1); }
+  50% { transform: translate(-40px, 120px) scale(0.95); }
+  75% { transform: translate(60px, 40px) scale(1.05); }
+}
+
+@keyframes floatBlob2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(80px, -40px) scale(1.15); }
+  50% { transform: translate(40px, -100px) scale(0.9); }
+  75% { transform: translate(-60px, -60px) scale(1.1); }
+}
+
+/* === NEON GLOW BUTTONS === */
+.cognify-btn-primary {
+  background: linear-gradient(135deg, #4b0082, #6a1b9a) !important;
+  box-shadow: 0 4px 15px rgba(75, 0, 130, 0.3), 0 0 20px rgba(75, 0, 130, 0.1) !important;
+  transition: all 0.3s ease !important;
+}
+
+.cognify-btn-primary:hover {
+  box-shadow: 0 6px 25px rgba(75, 0, 130, 0.45), 0 0 40px rgba(75, 0, 130, 0.2) !important;
+  transform: translateY(-2px) !important;
+}
+
+.cognify-btn-success {
+  box-shadow: 0 4px 15px rgba(46, 204, 113, 0.3), 0 0 20px rgba(46, 204, 113, 0.1) !important;
+}
+
+.cognify-btn-success:hover {
+  box-shadow: 0 6px 25px rgba(46, 204, 113, 0.45), 0 0 40px rgba(46, 204, 113, 0.2) !important;
+}
+
+.cognify-btn-danger {
+  box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3), 0 0 20px rgba(231, 76, 60, 0.1) !important;
+}
+
+.cognify-btn-danger:hover {
+  box-shadow: 0 6px 25px rgba(231, 76, 60, 0.45), 0 0 40px rgba(231, 76, 60, 0.2) !important;
+}
+
+/* === PREMIUM COIN BADGE === */
+.cognify-coins {
+  background: linear-gradient(135deg, #ffd700, #ffb800, #ffd700) !important;
+  background-size: 200% 200% !important;
+  animation: coinShimmer 2s ease infinite !important;
+  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+  border: 1px solid rgba(255, 179, 0, 0.3) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes coinShimmer {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.cognify-coins::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 70%
+  );
+  animation: coinSweep 3s ease-in-out infinite;
+}
+
+@keyframes coinSweep {
+  0% { transform: translateX(-100%) rotate(45deg); }
+  100% { transform: translateX(100%) rotate(45deg); }
+}
+
+/* === MODE CARDS — HOVER MAGIC === */
+.cognify-mode-card {
+  background: rgba(255, 255, 255, 0.8) !important;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(75, 0, 130, 0.1) !important;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.cognify-mode-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #4b0082, #9b59b6, #4b0082);
+  transform: scaleX(0);
+  transition: transform 0.4s ease;
+}
+
+.cognify-mode-card:hover::before {
+  transform: scaleX(1);
+}
+
+.cognify-mode-card:hover {
+  transform: translateY(-8px) !important;
+  border-color: rgba(75, 0, 130, 0.3) !important;
+  box-shadow: 0 20px 50px rgba(75, 0, 130, 0.15) !important;
+}
+
+.cognify-mode-card:hover span {
+  background-color: #4b0082 !important;
+  color: white !important;
+  transform: scale(1.05);
+}
+
+/* === QUIZ OVERLAY — DRAMATIC ENTRANCE === */
+.cognify-overlay {
+  animation: overlayIn 0.4s ease !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+@keyframes overlayIn {
+  from { opacity: 0; backdrop-filter: blur(0px); }
+  to { opacity: 1; backdrop-filter: blur(12px); }
+}
+
+.cognify-quiz-card {
+  animation: quizBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.3) !important;
+  border-radius: 24px !important;
+}
+
+@keyframes quizBounce {
+  from { opacity: 0; transform: scale(0.7) translateY(40px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* === FOCUS SCORE — ANIMATED RING === */
+.cognify-focus-bar {
+  height: 10px !important;
+  border-radius: 5px !important;
+  background: rgba(75, 0, 130, 0.08) !important;
+  overflow: hidden;
+}
+
+.cognify-focus-fill {
+  border-radius: 5px !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.cognify-focus-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  animation: barShine 2s ease-in-out infinite;
+}
+
+@keyframes barShine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* === STATUS BADGES — GLOWING === */
+.cognify-status.focused {
+  background: linear-gradient(135deg, #d4edda, #c3e6cb) !important;
+  box-shadow: 0 0 12px rgba(46, 204, 113, 0.2);
+}
+
+.cognify-status.distracted {
+  background: linear-gradient(135deg, #f8d7da, #f5c6cb) !important;
+  box-shadow: 0 0 12px rgba(231, 76, 60, 0.3);
+  animation: distGlow 1.5s ease-in-out infinite !important;
+}
+
+@keyframes distGlow {
+  0%, 100% { box-shadow: 0 0 12px rgba(231, 76, 60, 0.2); }
+  50% { box-shadow: 0 0 25px rgba(231, 76, 60, 0.5); }
+}
+
+.cognify-status.remediation {
+  background: linear-gradient(135deg, #fff3cd, #ffeeba) !important;
+  box-shadow: 0 0 12px rgba(243, 156, 18, 0.2);
+}
+
+/* === INPUT FIELDS — SLEEK === */
+.cognify-input {
+  background: rgba(255, 255, 255, 0.9) !important;
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(75, 0, 130, 0.1) !important;
+  transition: all 0.3s ease !important;
+  border-radius: 14px !important;
+}
+
+.cognify-input:focus {
+  border-color: #4b0082 !important;
+  box-shadow: 0 0 0 4px rgba(75, 0, 130, 0.1), 0 4px 15px rgba(75, 0, 130, 0.08) !important;
+}
+
+/* === ACTIVE PARAGRAPH — GLOW === */
+.cognify-paragraph.active {
+  background: linear-gradient(135deg, rgba(75, 0, 130, 0.04), rgba(75, 0, 130, 0.08)) !important;
+  border-left: 4px solid #4b0082 !important;
+  box-shadow: 0 4px 20px rgba(75, 0, 130, 0.06) !important;
+  border-radius: 12px !important;
+}
+
+.cognify-paragraph.completed {
+  opacity: 0.4;
+}
+
+/* === WEBCAM BORDER PULSE === */
+@keyframes webcamPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.3); }
+  50% { box-shadow: 0 0 0 6px rgba(46, 204, 113, 0); }
+}
+
+/* === LYRICS PANEL GLOW === */
+div[style*="background: #1a1a2e"],
+div[style*="background: rgb(26, 26, 46)"] {
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+/* === VIDEO CARDS === */
+.cognify-video-card {
+  background: rgba(255, 255, 255, 0.8) !important;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+  border-radius: 14px !important;
+  transition: all 0.3s ease !important;
+}
+
+.cognify-video-card:hover {
+  transform: translateX(6px) !important;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08) !important;
+  border-color: rgba(231, 76, 60, 0.2) !important;
+}
+
+/* === ACCESSIBILITY PANEL TOGGLES === */
+.cognify-settings-panel {
+  background: rgba(255, 255, 255, 0.75) !important;
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+}
+
+.cognify-switch {
+  transition: all 0.3s ease !important;
+}
+
+.cognify-switch:hover {
+  transform: scale(1.05);
+}
+
+/* === PULSE GLOW UPGRADE (audio orb) === */
+.pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite !important;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 30px rgba(46, 204, 113, 0.3); }
+  50% { transform: scale(1.06); box-shadow: 0 0 60px rgba(46, 204, 113, 0.5); }
+}
+
+/* === BUTTON RIPPLE EFFECT === */
+.cognify-btn-primary,
+.cognify-btn-secondary,
+.cognify-btn-success,
+.cognify-btn-danger {
+  position: relative;
+  overflow: hidden;
+}
+
+.cognify-btn-primary::after,
+.cognify-btn-success::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  transition: width 0.6s ease, height 0.6s ease, top 0.6s ease, left 0.6s ease;
+}
+
+.cognify-btn-primary:active::after,
+.cognify-btn-success:active::after {
+  width: 300px;
+  height: 300px;
+  top: calc(50% - 150px);
+  left: calc(50% - 150px);
+  opacity: 0;
+}
+
+/* === SMOOTH SCROLLBAR === */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(75, 0, 130, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 0, 130, 0.4);
+}
+
+/* === HIGH CONTRAST OVERRIDES (keep accessible) === */
+body.high-contrast .cognify-card {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: #1a1a1a !important;
+}
+
+body.high-contrast .cognify-header {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: #1a1a1a !important;
+}
+
+body.high-contrast {
+  background: #000000 !important;
+  animation: none !important;
+}
+
+body.high-contrast::before,
+body.high-contrast::after {
+  display: none !important;
+}
