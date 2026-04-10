@@ -9,9 +9,11 @@ import { useUser } from '../utils/UserContext';
 const ListenMode = () => {
   const navigate = useNavigate();
   const speechSynthRef = useRef(window.speechSynthesis);
+  const lineTimerRef = useRef(null);
+  const lyricsRef = useRef(null);
 
   const paragraphs = JSON.parse(localStorage.getItem("cognify_paragraphs") || "[]");
-  const summary = localStorage.getItem("cognify_summary") || "";
+  const [summary] = useState(localStorage.getItem("cognify_summary") || "");
   const [currentIndex, setCurrentIndex] = useState(0);
   const [readingMode, setReadingMode] = useState("full");
   const currentParagraph = paragraphs[currentIndex] || "Please go back and upload a PDF first!";
@@ -20,7 +22,12 @@ const ListenMode = () => {
   const [autoPlay, setAutoPlay] = useState(false);
   const [focusCoins, setFocusCoins] = useState(0);
 
+  // Lyrics
+  const [activeLineIndex, setActiveLineIndex] = useState(-1);
+  const [lines, setLines] = useState([]);
+
   const [isDistracted, setIsDistracted] = useState(false);
+  const isDistractedRef = useRef(false);
   const [quizQuestion, setQuizQuestion] = useState("");
   const [userAnswer, setUserAnswer] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -29,22 +36,17 @@ const ListenMode = () => {
   const [failureCount, setFailureCount] = useState(0);
 
   const [showEmpatheticChoice, setShowEmpatheticChoice] = useState(false);
-
   const [showReframe, setShowReframe] = useState(false);
   const [reframeText, setReframeText] = useState("");
   const [isReframing, setIsReframing] = useState(false);
   const [youtubeVideos, setYoutubeVideos] = useState([]);
   const [isSearchingVideos, setIsSearchingVideos] = useState(false);
-
   const [showCheckIn, setShowCheckIn] = useState(false);
   const [checkInCount, setCheckInCount] = useState(0);
 
-  const [isVoiceActive, setIsVoiceActive] = useState(false);
-  const [lastVoiceCommand, setLastVoiceCommand] = useState("");
-  const voiceRecognitionRef = useRef(null);
-
   const { isBlindMode } = useUser();
 
+  // ===== LOAD COINS =====
   useEffect(() => {
     const fetchCoins = async () => {
       if (auth.currentUser) {
@@ -55,25 +57,78 @@ const ListenMode = () => {
     fetchCoins();
   }, []);
 
+  // ===== SPLIT TEXT INTO LINES =====
+  useEffect(() => {
+    const text = readingMode === "summary" && summary ? summary : currentParagraph;
+    const words = text.split(/\s+/);
+    const chunks = [];
+    for (let i = 0; i < words.length; i += 8) {
+      chunks.push(words.slice(i, i + 8).join(' '));
+    }
+    setLines(chunks);
+    setActiveLineIndex(-1);
+  }, [currentIndex, readingMode, summary, currentParagraph]);
+
+  // ===== SIMPLE SPEAK (system messages) =====
   const speakText = useCallback((text, onEnd) => {
     speechSynthRef.current.cancel();
+    clearInterval(lineTimerRef.current);
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.9;
-    utterance.pitch = 1;
-    utterance.onstart = () => setIsPlaying(true);
-    utterance.onend = () => {
-      setIsPlaying(false);
-      if (onEnd) onEnd();
-    };
+    utterance.onend = () => { if (onEnd) onEnd(); };
     speechSynthRef.current.speak(utterance);
   }, []);
 
-  const speakCurrentParagraph = useCallback(() => {
-    const text = readingMode === "summary" && summary
-      ? `Summary mode. ${summary}`
-      : `Section ${currentIndex + 1}. ${currentParagraph}`;
+  // ===== LYRICS SPEAK =====
+  const speakWithLyrics = useCallback((text, onEnd) => {
+    speechSynthRef.current.cancel();
+    clearInterval(lineTimerRef.current);
 
-    speakText(text, () => {
+    const words = text.split(/\s+/);
+    const chunks = [];
+    for (let i = 0; i < words.length; i += 8) {
+      chunks.push(words.slice(i, i + 8).join(' '));
+    }
+    setLines(chunks);
+    setActiveLineIndex(0);
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9;
+
+    // ~135 words/min at 0.9 rate → 8 words ≈ 3.5s
+    const msPerLine = 3500;
+
+    utterance.onstart = () => {
+      setIsPlaying(true);
+      let lineIdx = 0;
+      lineTimerRef.current = setInterval(() => {
+        lineIdx++;
+        if (lineIdx < chunks.length) {
+          setActiveLineIndex(lineIdx);
+          if (lyricsRef.current) {
+            const el = lyricsRef.current.querySelector('.lyric-active');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        } else {
+          clearInterval(lineTimerRef.current);
+        }
+      }, msPerLine);
+    };
+
+    utterance.onend = () => {
+      setIsPlaying(false);
+      clearInterval(lineTimerRef.current);
+      setActiveLineIndex(-1);
+      if (onEnd) onEnd();
+    };
+
+    speechSynthRef.current.speak(utterance);
+  }, []);
+
+  // ===== PLAY CURRENT =====
+  const speakCurrentParagraph = useCallback(() => {
+    const text = readingMode === "summary" && summary ? summary : currentParagraph;
+    speakWithLyrics(text, () => {
       if (autoPlay && currentIndex < paragraphs.length - 1) {
         if ((currentIndex + 1) % 2 === 0) {
           triggerCheckIn();
@@ -82,13 +137,15 @@ const ListenMode = () => {
         }
       }
     });
-  }, [currentIndex, currentParagraph, readingMode, summary, autoPlay, speakText]);
+  }, [currentIndex, currentParagraph, readingMode, summary, autoPlay, speakWithLyrics]);
 
   const togglePlay = () => {
     if (isPlaying) {
       speechSynthRef.current.cancel();
+      clearInterval(lineTimerRef.current);
       setIsPlaying(false);
       setAutoPlay(false);
+      setActiveLineIndex(-1);
     } else {
       setAutoPlay(true);
       speakCurrentParagraph();
@@ -102,13 +159,16 @@ const ListenMode = () => {
   }, [currentIndex]);
 
   useEffect(() => {
-    return () => speechSynthRef.current.cancel();
+    return () => { speechSynthRef.current.cancel(); clearInterval(lineTimerRef.current); };
   }, []);
 
+  // ===== NAVIGATION =====
   const goNext = useCallback(() => {
     if (currentIndex < paragraphs.length - 1) {
       speechSynthRef.current.cancel();
+      clearInterval(lineTimerRef.current);
       setIsPlaying(false);
+      setActiveLineIndex(-1);
       setCurrentIndex(prev => prev + 1);
     }
   }, [currentIndex, paragraphs.length]);
@@ -116,51 +176,51 @@ const ListenMode = () => {
   const goPrev = useCallback(() => {
     if (currentIndex > 0) {
       speechSynthRef.current.cancel();
+      clearInterval(lineTimerRef.current);
       setIsPlaying(false);
+      setActiveLineIndex(-1);
       setCurrentIndex(prev => prev - 1);
     }
   }, [currentIndex]);
 
-  const repeatCurrent = useCallback(() => {
-    speakCurrentParagraph();
-  }, [speakCurrentParagraph]);
+  const repeatCurrent = useCallback(() => { speakCurrentParagraph(); }, [speakCurrentParagraph]);
 
+  // ===== DISTRACTION =====
   const triggerDistraction = useCallback(async () => {
-    if (isDistracted || showCheckIn || showReframe || showEmpatheticChoice) return;
-
+    if (isDistractedRef.current || showCheckIn || showReframe || showEmpatheticChoice) return;
     setIsDistracted(true);
+    isDistractedRef.current = true;
     speechSynthRef.current.cancel();
+    clearInterval(lineTimerRef.current);
     setIsPlaying(false);
     setAutoPlay(false);
+    setActiveLineIndex(-1);
     setLoadingStatus("generating");
     setFeedback("");
     setUserAnswer("");
-    setShowEmpatheticChoice(false);
-
     const question = await generatePopQuiz(currentParagraph);
     setQuizQuestion(question);
     setLoadingStatus("");
-
-    const alertSpeech = new SpeechSynthesisUtterance("Attention check! " + question);
-    speechSynthRef.current.speak(alertSpeech);
-  }, [isDistracted, showCheckIn, showReframe, showEmpatheticChoice, currentParagraph]);
+    speakText("Attention check! " + question);
+  }, [showCheckIn, showReframe, showEmpatheticChoice, currentParagraph, speakText]);
 
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden && !isDistracted && !showCheckIn && !showReframe) {
-        triggerDistraction();
-      }
+    const handler = () => {
+      if (document.hidden && !isDistractedRef.current && !showCheckIn && !showReframe) triggerDistraction();
     };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [isDistracted, showCheckIn, showReframe, triggerDistraction]);
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [showCheckIn, showReframe, triggerDistraction]);
 
+  // ===== CHECK-IN =====
   const triggerCheckIn = useCallback(() => {
     setShowCheckIn(true);
     setCheckInCount(prev => prev + 1);
     speechSynthRef.current.cancel();
+    clearInterval(lineTimerRef.current);
     setIsPlaying(false);
-    speakText("Quick check. Did you understand that section, or should I explain it differently? Say yes or no.");
+    setActiveLineIndex(-1);
+    speakText("Quick check. Did you understand that section?");
   }, [speakText]);
 
   const handleCheckInUnderstood = () => {
@@ -168,10 +228,8 @@ const ListenMode = () => {
     const newTotal = focusCoins + 5;
     setFocusCoins(newTotal);
     if (auth.currentUser) saveFocusCoins(auth.currentUser.uid, newTotal);
-    speakText("Great job! Moving on.", () => {
-      if (currentIndex < paragraphs.length - 1) {
-        setCurrentIndex(prev => prev + 1);
-      }
+    speakText("Great! Moving on.", () => {
+      if (currentIndex < paragraphs.length - 1) setCurrentIndex(prev => prev + 1);
     });
   };
 
@@ -179,43 +237,38 @@ const ListenMode = () => {
     setShowCheckIn(false);
     setShowReframe(true);
     setIsReframing(true);
-
     const reframe = await reframeContent(currentParagraph);
     setReframeText(reframe);
     setIsReframing(false);
     speakText(reframe);
-
     setIsSearchingVideos(true);
-    const firstSentence = currentParagraph.split('.')[0];
-    const videos = await searchYouTube(firstSentence);
+    const videos = await searchYouTube(currentParagraph.split('.')[0]);
     setYoutubeVideos(videos);
     setIsSearchingVideos(false);
   };
 
+  // ===== GRADING =====
   const handleSubmitAnswer = async () => {
     if (!userAnswer.trim()) return;
-
     setLoadingStatus("grading");
     const result = await gradeAnswer(quizQuestion, userAnswer);
-
     if (result.startsWith("CORRECT")) {
       const newTotal = focusCoins + 10;
       setFocusCoins(newTotal);
       if (auth.currentUser) await saveFocusCoins(auth.currentUser.uid, newTotal);
-
       setIsDistracted(false);
+      isDistractedRef.current = false;
       setLoadingStatus("");
       setFailureCount(0);
-      speakText("Correct! Great focus. Resuming your audio session.");
+      speakText("Correct! Resuming.");
     } else {
       setLoadingStatus("");
       setFeedback(result);
-      const newFailureCount = failureCount + 1;
-      setFailureCount(newFailureCount);
-
-      if (newFailureCount >= 2) {
+      const fc = failureCount + 1;
+      setFailureCount(fc);
+      if (fc >= 2) {
         setShowEmpatheticChoice(true);
-        speakText("You seem to be struggling. Were you distracted, or did you not understand the material?");
+        speakText("Were you distracted or didn't understand?");
       } else {
         speakText("Incorrect. " + result);
       }
@@ -225,137 +278,52 @@ const ListenMode = () => {
   const handleDistractedChoice = () => {
     setShowEmpatheticChoice(false);
     setIsDistracted(false);
+    isDistractedRef.current = false;
     setFailureCount(0);
-    speakText("No worries! Let me repeat that section for you.", () => {
-      repeatCurrent();
-    });
+    speakText("Repeating section.", () => repeatCurrent());
   };
 
   const handleDidntUnderstand = async () => {
     setShowEmpatheticChoice(false);
     setIsDistracted(false);
+    isDistractedRef.current = false;
     setFailureCount(0);
-
     setShowReframe(true);
     setIsReframing(true);
     const reframe = await reframeContent(currentParagraph);
     setReframeText(reframe);
     setIsReframing(false);
     speakText(reframe);
-
     setIsSearchingVideos(true);
-    const firstSentence = currentParagraph.split('.')[0];
-    const videos = await searchYouTube(firstSentence);
+    const videos = await searchYouTube(currentParagraph.split('.')[0]);
     setYoutubeVideos(videos);
     setIsSearchingVideos(false);
   };
 
-  const handleCloseReframe = () => {
-    setShowReframe(false);
-    setReframeText("");
-    setYoutubeVideos([]);
-  };
+  const handleCloseReframe = () => { setShowReframe(false); setReframeText(""); setYoutubeVideos([]); };
 
+  // ===== QUIZ VOICE INPUT =====
   const startListeningForAnswer = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) { alert("Your browser does not support voice input."); return; }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US';
-    recognition.onstart = () => setIsListening(true);
-    recognition.onresult = (event) => {
-      setUserAnswer(event.results[0][0].transcript);
-      setIsListening(false);
-    };
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
-    recognition.start();
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    const rec = new SR();
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.lang = 'en-US';
+    rec.onstart = () => setIsListening(true);
+    rec.onresult = (e) => { setUserAnswer(e.results[0][0].transcript); setIsListening(false); };
+    rec.onerror = () => setIsListening(false);
+    rec.onend = () => setIsListening(false);
+    rec.start();
   };
-
-  useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US';
-
-    recognition.onstart = () => setIsVoiceActive(true);
-
-    recognition.onresult = (event) => {
-      const last = event.results[event.results.length - 1];
-      const command = last[0].transcript.toLowerCase().trim();
-      setLastVoiceCommand(command);
-
-      if (command.includes("next") || command.includes("skip") || command.includes("continue")) {
-        goNext();
-      } else if (command.includes("back") || command.includes("previous") || command.includes("repeat")) {
-        if (command.includes("repeat")) {
-          repeatCurrent();
-        } else {
-          goPrev();
-        }
-      } else if (command.includes("play") || command.includes("resume") || command.includes("start")) {
-        if (!isPlaying) {
-          setAutoPlay(true);
-          speakCurrentParagraph();
-        }
-      } else if (command.includes("pause") || command.includes("stop")) {
-        speechSynthRef.current.cancel();
-        setIsPlaying(false);
-        setAutoPlay(false);
-      } else if (command.includes("summarize") || command.includes("summary")) {
-        setReadingMode("summary");
-        if (summary) {
-          speakText("Switching to summary mode. " + summary);
-        } else {
-          speakText("No summary available. Please generate one from the home screen.");
-        }
-      } else if (command.includes("full") || command.includes("original") || command.includes("normal")) {
-        setReadingMode("full");
-        speakText("Switching to full notes mode.");
-      } else if (command.includes("explain") || command.includes("help") || command.includes("don't understand")) {
-        handleCheckInConfused();
-      } else if (command.includes("yes") || command.includes("understood") || command.includes("got it")) {
-        if (showCheckIn) handleCheckInUnderstood();
-      } else if (command.includes("no") || command.includes("confused")) {
-        if (showCheckIn) handleCheckInConfused();
-      } else if (command.includes("distracted")) {
-        if (showEmpatheticChoice) handleDistractedChoice();
-      }
-    };
-
-    recognition.onerror = (e) => {
-      if (e.error !== 'no-speech') {
-        console.error("Voice command error:", e.error);
-        setIsVoiceActive(false);
-      }
-    };
-
-    recognition.onend = () => {
-      setIsVoiceActive(false);
-      // Debounce restart to prevent flicker
-      setTimeout(() => {
-        try { recognition.start(); } catch (e) {}
-      }, 1000);
-    };
-
-    try { recognition.start(); } catch (e) {}
-    voiceRecognitionRef.current = recognition;
-
-    return () => {
-      try { recognition.stop(); } catch (e) {}
-    };
-  }, [showCheckIn, showEmpatheticChoice]);
 
   const progressPercent = paragraphs.length > 0 ? Math.round(((currentIndex + 1) / paragraphs.length) * 100) : 0;
 
+  // ===== RENDER =====
   return (
     <div style={{ padding: '24px', fontFamily: "'Inter', sans-serif", minHeight: '100vh' }}>
 
+      {/* HEADER */}
       <div className="cognify-header">
         <button onClick={() => { speechSynthRef.current.cancel(); navigate('/'); }} className="cognify-btn-secondary">
           <ArrowLeft size={18} /> Back
@@ -369,10 +337,11 @@ const ListenMode = () => {
         </div>
       </div>
 
+      {/* PROGRESS */}
       <div style={{ margin: '0 0 24px 0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#888', marginBottom: '6px' }}>
           <span>Section {currentIndex + 1} of {paragraphs.length}</span>
-          <span>{progressPercent}% Complete</span>
+          <span>{progressPercent}%</span>
         </div>
         <div className="cognify-focus-bar">
           <div className="cognify-focus-fill" style={{ width: `${progressPercent}%`, backgroundColor: '#4b0082' }} />
@@ -381,110 +350,108 @@ const ListenMode = () => {
 
       <div style={{ display: 'flex', gap: '24px' }}>
 
+        {/* MAIN PLAYER */}
         <div style={{ flex: 2.5 }}>
-          <div className="cognify-card" style={{ textAlign: 'center', padding: '40px', position: 'relative' }}>
+          <div className="cognify-card" style={{ textAlign: 'center', padding: '30px' }}>
 
+            {/* Orb */}
             <div className={isPlaying ? 'pulse-glow' : ''} style={{
-              width: '140px', height: '140px', borderRadius: '50%',
+              width: '100px', height: '100px', borderRadius: '50%',
               background: isPlaying ? 'linear-gradient(135deg, #2ecc71, #27ae60)' : 'linear-gradient(135deg, #4b0082, #6a1b9a)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 30px', transition: 'all 0.5s ease',
-              boxShadow: isPlaying ? '0 0 40px rgba(46, 204, 113, 0.3)' : '0 0 30px rgba(75, 0, 130, 0.2)'
+              margin: '0 auto 20px', transition: 'all 0.5s ease',
+              boxShadow: isPlaying ? '0 0 40px rgba(46,204,113,0.3)' : '0 0 20px rgba(75,0,130,0.2)'
             }}>
-              <Headphones size={60} color="white" />
+              <Headphones size={44} color="white" />
             </div>
 
-            <h2 style={{ color: '#1a1a2e', marginBottom: '8px' }}>
-              {isPlaying ? `Reading Section ${currentIndex + 1}...` : 'Audio Paused'}
-            </h2>
-            <p style={{ color: '#888', fontSize: '14px', marginBottom: '8px' }}>
-              Mode: {readingMode === "summary" ? "📝 AI Summary" : "📄 Full Notes"}
+            <p style={{ color: '#888', fontSize: '13px', marginBottom: '6px' }}>
+              {readingMode === "summary" ? "📝 AI Summary" : "📄 Full Notes"} • Section {currentIndex + 1}
             </p>
 
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '30px' }}>
-              <button onClick={() => setReadingMode("full")}
-                className={readingMode === "full" ? "cognify-btn-primary" : "cognify-btn-secondary"}
-                style={{ padding: '8px 16px', fontSize: '13px' }}>
-                Full Notes
-              </button>
-              <button onClick={() => { if (summary) setReadingMode("summary"); else alert("Generate summary from Home first!"); }}
+            {/* Mode Toggle */}
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '16px' }}>
+              <button onClick={() => setReadingMode("full")} className={readingMode === "full" ? "cognify-btn-primary" : "cognify-btn-secondary"} style={{ padding: '6px 14px', fontSize: '12px' }}>Full Notes</button>
+              <button onClick={() => summary && summary.length > 20 ? setReadingMode("summary") : null}
                 className={readingMode === "summary" ? "cognify-btn-primary" : "cognify-btn-secondary"}
-                style={{ padding: '8px 16px', fontSize: '13px', opacity: summary ? 1 : 0.5 }}>
-                AI Summary
-              </button>
+                style={{ padding: '6px 14px', fontSize: '12px', opacity: summary && summary.length > 20 ? 1 : 0.4 }}>AI Summary</button>
             </div>
 
-            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', alignItems: 'center' }}>
+            {/* Controls */}
+            <div style={{ display: 'flex', gap: '14px', justifyContent: 'center', alignItems: 'center', marginBottom: '20px' }}>
               <button onClick={goPrev} disabled={currentIndex === 0} className="cognify-btn-secondary"
-                style={{ borderRadius: '50%', width: '50px', height: '50px', padding: 0, justifyContent: 'center', opacity: currentIndex === 0 ? 0.4 : 1 }}>
-                <SkipBack size={20} />
+                style={{ borderRadius: '50%', width: '46px', height: '46px', padding: 0, justifyContent: 'center', opacity: currentIndex === 0 ? 0.3 : 1 }}>
+                <SkipBack size={18} />
               </button>
-
               <button onClick={togglePlay} className={isPlaying ? "cognify-btn-danger" : "cognify-btn-success"}
-                style={{ borderRadius: '50%', width: '70px', height: '70px', padding: 0, justifyContent: 'center', fontSize: '20px' }}>
-                {isPlaying ? <Pause size={30} /> : <Play size={30} style={{ marginLeft: '3px' }} />}
+                style={{ borderRadius: '50%', width: '62px', height: '62px', padding: 0, justifyContent: 'center' }}>
+                {isPlaying ? <Pause size={26} /> : <Play size={26} style={{ marginLeft: '3px' }} />}
               </button>
-
               <button onClick={goNext} disabled={currentIndex === paragraphs.length - 1} className="cognify-btn-secondary"
-                style={{ borderRadius: '50%', width: '50px', height: '50px', padding: 0, justifyContent: 'center', opacity: currentIndex === paragraphs.length - 1 ? 0.4 : 1 }}>
-                <SkipForward size={20} />
+                style={{ borderRadius: '50%', width: '46px', height: '46px', padding: 0, justifyContent: 'center', opacity: currentIndex === paragraphs.length - 1 ? 0.3 : 1 }}>
+                <SkipForward size={18} />
               </button>
             </div>
 
-            <div style={{ marginTop: '30px', textAlign: 'left', padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '12px', maxHeight: '200px', overflowY: 'auto' }}>
-              <p style={{ fontSize: '13px', color: '#888', marginBottom: '8px', fontWeight: 600 }}>
-                {readingMode === "summary" ? "📝 Summary Preview:" : `📄 Section ${currentIndex + 1}:`}
-              </p>
-              <p style={{ fontSize: '14px', lineHeight: 1.8, color: '#444' }}>
-                {readingMode === "summary" && summary ? summary.substring(0, 500) + "..." : currentParagraph}
-              </p>
+            {/* LYRICS */}
+            <div style={{
+              background: '#1a1a2e', borderRadius: '16px', padding: '10px 0',
+              position: 'relative', overflow: 'hidden', minHeight: '280px'
+            }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50px', background: 'linear-gradient(180deg, #1a1a2e, transparent)', zIndex: 2 }} />
+              <div ref={lyricsRef} style={{
+                maxHeight: '280px', overflowY: 'auto', padding: '40px 30px',
+                scrollBehavior: 'smooth', scrollbarWidth: 'none'
+              }}>
+                <style>{`div[ref]::-webkit-scrollbar { width: 0; display: none; }`}</style>
+                {lines.map((line, idx) => (
+                  <p key={idx}
+                    className={idx === activeLineIndex ? 'lyric-active' : ''}
+                    style={{
+                      fontSize: idx === activeLineIndex ? '22px' : '17px',
+                      fontWeight: idx === activeLineIndex ? 700 : 400,
+                      color: idx < activeLineIndex ? 'rgba(255,255,255,0.3)' :
+                             idx === activeLineIndex ? '#ffffff' :
+                             'rgba(255,255,255,0.15)',
+                      textAlign: 'center',
+                      padding: '10px 20px',
+                      margin: '4px 0',
+                      transition: 'all 0.4s ease',
+                      lineHeight: 1.6,
+                      transform: idx === activeLineIndex ? 'scale(1.02)' : 'scale(1)',
+                    }}>
+                    {line}
+                  </p>
+                ))}
+              </div>
+              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '50px', background: 'linear-gradient(0deg, #1a1a2e, transparent)', zIndex: 2 }} />
             </div>
           </div>
         </div>
 
+        {/* SIDEBAR */}
         <div style={{ flex: 1, minWidth: '280px' }}>
 
-          <div className="cognify-card" style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-              <Mic size={18} color="#4b0082" />
-              <h4 style={{ margin: 0, color: '#4b0082', fontSize: '14px' }}>Voice Commands</h4>
-            </div>
-            <div style={{ fontSize: '12px', color: isVoiceActive ? '#2ecc71' : '#999', fontWeight: 600, marginBottom: '10px' }}>
-              {isVoiceActive ? '🟢 Listening...' : '🔴 Inactive'}
-            </div>
-            {lastVoiceCommand && (
-              <div style={{ fontSize: '12px', color: '#888', padding: '8px', backgroundColor: '#f8f9fa', borderRadius: '8px', marginBottom: '10px' }}>
-                Last: "{lastVoiceCommand}"
-              </div>
-            )}
-            <div style={{ fontSize: '12px', color: '#aaa', lineHeight: 2 }}>
-              <div><b>"Play"</b> / <b>"Pause"</b></div>
-              <div><b>"Next"</b> / <b>"Previous"</b></div>
-              <div><b>"Repeat"</b> — replay section</div>
-              <div><b>"Summarize"</b> — switch to summary</div>
-              <div><b>"Explain"</b> — get simpler version</div>
-              <div><b>"Yes"</b> / <b>"No"</b> — answer check-ins</div>
-            </div>
-          </div>
-
+          {/* Stats */}
           <div className="cognify-card" style={{ textAlign: 'center', marginBottom: '20px' }}>
-            <h4 style={{ color: '#4b0082', marginBottom: '16px', fontSize: '14px' }}>Session Stats</h4>
+            <h4 style={{ color: '#4b0082', marginBottom: '16px', fontSize: '14px' }}>Session</h4>
             <div style={{ display: 'flex', justifyContent: 'space-around' }}>
               <div>
-                <div style={{ fontSize: '28px', fontWeight: 800, color: '#4b0082' }}>{currentIndex + 1}</div>
-                <div style={{ fontSize: '11px', color: '#888' }}>Sections Read</div>
+                <div style={{ fontSize: '26px', fontWeight: 800, color: '#4b0082' }}>{currentIndex + 1}</div>
+                <div style={{ fontSize: '11px', color: '#888' }}>Sections</div>
               </div>
               <div>
-                <div style={{ fontSize: '28px', fontWeight: 800, color: '#2ecc71' }}>{checkInCount}</div>
+                <div style={{ fontSize: '26px', fontWeight: 800, color: '#2ecc71' }}>{checkInCount}</div>
                 <div style={{ fontSize: '11px', color: '#888' }}>Check-Ins</div>
               </div>
               <div>
-                <div style={{ fontSize: '28px', fontWeight: 800, color: '#ffd700' }}>{focusCoins}</div>
+                <div style={{ fontSize: '26px', fontWeight: 800, color: '#ffd700' }}>{focusCoins}</div>
                 <div style={{ fontSize: '11px', color: '#888' }}>Coins</div>
               </div>
             </div>
           </div>
 
+          {/* Quick Actions */}
           <div className="cognify-card">
             <h4 style={{ color: '#4b0082', marginBottom: '12px', fontSize: '14px' }}>Quick Actions</h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -499,38 +466,29 @@ const ListenMode = () => {
         </div>
       </div>
 
+      {/* ===== OVERLAYS ===== */}
       {isDistracted && !showEmpatheticChoice && (
         <div className="cognify-overlay">
           <div className="cognify-quiz-card">
             <AlertTriangle size={45} color="#e74c3c" style={{ marginBottom: '12px' }} />
-            <h2 style={{ color: '#e74c3c', marginBottom: '8px' }}>Audio Paused: Attention Check</h2>
-            <p style={{ color: '#888', marginBottom: '24px' }}>Answer this to resume your audio session</p>
-
+            <h2 style={{ color: '#e74c3c', marginBottom: '8px' }}>Attention Check</h2>
             <p style={{ fontSize: '20px', fontWeight: 700, color: '#1a1a2e', margin: '20px 0' }}>
-              {loadingStatus === "generating" ? "Generating quiz..." : loadingStatus === "grading" ? "Grading..." : quizQuestion}
+              {loadingStatus === "generating" ? "Generating..." : loadingStatus === "grading" ? "Grading..." : quizQuestion}
             </p>
-
             {!loadingStatus && (
-              <div style={{ marginTop: '24px' }}>
+              <div style={{ marginTop: '20px' }}>
                 <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
                   <input type="text" value={userAnswer} onChange={(e) => setUserAnswer(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSubmitAnswer()}
-                    placeholder="Type or speak your answer..." className="cognify-input" style={{ flex: 1 }} />
+                    placeholder="Type or speak..." className="cognify-input" style={{ flex: 1 }} />
                   <button onClick={startListeningForAnswer} className={isListening ? "cognify-btn-danger" : "cognify-btn-secondary"}>
-                    <Mic size={20} /> {isListening ? "..." : "Speak"}
+                    <Mic size={20} />
                   </button>
                 </div>
-                <button onClick={handleSubmitAnswer} className="cognify-btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px' }}>
-                  Submit Answer
-                </button>
+                <button onClick={handleSubmitAnswer} className="cognify-btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px' }}>Submit</button>
               </div>
             )}
-
-            {feedback && (
-              <p style={{ color: '#e74c3c', marginTop: '16px', fontWeight: 600 }}>
-                ❌ {feedback} <br /><span style={{ fontSize: '13px', color: '#999' }}>Attempt {failureCount}/2</span>
-              </p>
-            )}
+            {feedback && <p style={{ color: '#e74c3c', marginTop: '16px', fontWeight: 600 }}>❌ {feedback}</p>}
           </div>
         </div>
       )}
@@ -539,17 +497,10 @@ const ListenMode = () => {
         <div className="cognify-overlay">
           <div className="cognify-quiz-card" style={{ border: '3px solid #4b0082' }}>
             <Brain size={45} color="#4b0082" style={{ marginBottom: '12px' }} />
-            <h2 style={{ color: '#4b0082', marginBottom: '8px' }}>Let me help you</h2>
-            <p style={{ color: '#666', marginBottom: '30px', fontSize: '18px' }}>
-              Were you distracted, or did you not understand the material?
-            </p>
-            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button onClick={handleDistractedChoice} className="cognify-btn-secondary" style={{ padding: '16px 28px', fontSize: '16px' }}>
-                😅 I was distracted — repeat it
-              </button>
-              <button onClick={handleDidntUnderstand} className="cognify-btn-primary" style={{ padding: '16px 28px', fontSize: '16px' }}>
-                🤔 I didn't understand — explain differently
-              </button>
+            <h2 style={{ color: '#4b0082' }}>Let me help</h2>
+            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginTop: '24px' }}>
+              <button onClick={handleDistractedChoice} className="cognify-btn-secondary" style={{ padding: '16px 24px' }}>😅 Distracted</button>
+              <button onClick={handleDidntUnderstand} className="cognify-btn-primary" style={{ padding: '16px 24px' }}>🤔 Didn't understand</button>
             </div>
           </div>
         </div>
@@ -559,17 +510,10 @@ const ListenMode = () => {
         <div className="cognify-overlay">
           <div className="cognify-quiz-card" style={{ border: '3px solid #2ecc71' }}>
             <Brain size={45} color="#2ecc71" style={{ marginBottom: '12px' }} />
-            <h2 style={{ color: '#2ecc71', marginBottom: '8px' }}>Quick Check-In</h2>
-            <p style={{ color: '#666', marginBottom: '30px', fontSize: '18px' }}>
-              Did you understand that section? Say "yes" or "no", or click below.
-            </p>
-            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button onClick={handleCheckInUnderstood} className="cognify-btn-success" style={{ padding: '16px 28px', fontSize: '16px' }}>
-                ✅ Yes, I got it! (+5 coins)
-              </button>
-              <button onClick={handleCheckInConfused} className="cognify-btn-primary" style={{ padding: '16px 28px', fontSize: '16px' }}>
-                🤔 Explain differently
-              </button>
+            <h2 style={{ color: '#2ecc71' }}>Quick Check-In</h2>
+            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginTop: '24px' }}>
+              <button onClick={handleCheckInUnderstood} className="cognify-btn-success" style={{ padding: '16px 24px' }}>✅ Got it (+5)</button>
+              <button onClick={handleCheckInConfused} className="cognify-btn-primary" style={{ padding: '16px 24px' }}>🤔 Explain</button>
             </div>
           </div>
         </div>
@@ -580,40 +524,24 @@ const ListenMode = () => {
           <div style={{ maxWidth: '700px', width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="cognify-quiz-card" style={{ border: '3px solid #4b0082', marginBottom: '20px' }}>
               <Brain size={40} color="#4b0082" style={{ marginBottom: '10px' }} />
-              <h2 style={{ color: '#4b0082', marginBottom: '16px' }}>AI Simplified Explanation</h2>
-              {isReframing ? (
-                <p style={{ color: '#888', fontSize: '16px' }}>Generating a simpler explanation...</p>
-              ) : (
-                <p style={{ fontSize: '17px', lineHeight: 1.8, color: '#333', textAlign: 'left', padding: '0 10px' }}>{reframeText}</p>
-              )}
+              <h2 style={{ color: '#4b0082' }}>Simplified Explanation</h2>
+              {isReframing ? <p style={{ color: '#888' }}>Generating...</p> : <p style={{ fontSize: '17px', lineHeight: 1.8, color: '#333', textAlign: 'left' }}>{reframeText}</p>}
             </div>
-
             {(isSearchingVideos || youtubeVideos.length > 0) && (
               <div className="cognify-quiz-card" style={{ border: '3px solid #e74c3c' }}>
                 <PlayCircle size={35} color="#e74c3c" style={{ marginBottom: '10px' }} />
-                <h3 style={{ color: '#e74c3c', marginBottom: '20px' }}>Recommended Tutorials</h3>
-                {isSearchingVideos ? (
-                  <p style={{ color: '#888' }}>Searching for the best tutorials...</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {youtubeVideos.map((video, idx) => (
-                      <a key={idx} href={`https://www.youtube.com/watch?v=${video.videoId}`} target="_blank" rel="noopener noreferrer"
-                        className="cognify-video-card" style={{ display: 'flex', gap: '12px', padding: '12px', textDecoration: 'none', color: 'inherit' }}>
-                        <img src={video.thumbnail} alt="" style={{ width: '160px', height: '90px', borderRadius: '8px', objectFit: 'cover' }} />
-                        <div style={{ textAlign: 'left', display: 'flex', alignItems: 'center' }}>
-                          <p style={{ fontWeight: 600, fontSize: '14px', color: '#1a1a2e', margin: 0 }}>{video.title}</p>
-                        </div>
-                      </a>
-                    ))}
-                  </div>
-                )}
+                <h3 style={{ color: '#e74c3c', marginBottom: '20px' }}>Tutorials</h3>
+                {isSearchingVideos ? <p>Searching...</p> : youtubeVideos.map((v, i) => (
+                  <a key={i} href={`https://www.youtube.com/watch?v=${v.videoId}`} target="_blank" rel="noopener noreferrer"
+                    className="cognify-video-card" style={{ display: 'flex', gap: '12px', padding: '12px', textDecoration: 'none', color: 'inherit', marginBottom: '8px' }}>
+                    <img src={v.thumbnail} alt="" style={{ width: '140px', height: '80px', borderRadius: '8px', objectFit: 'cover' }} />
+                    <p style={{ fontWeight: 600, fontSize: '14px', margin: 0 }}>{v.title}</p>
+                  </a>
+                ))}
               </div>
             )}
-
             <div style={{ textAlign: 'center', marginTop: '20px' }}>
-              <button onClick={handleCloseReframe} className="cognify-btn-success" style={{ padding: '14px 40px', fontSize: '16px' }}>
-                ✅ I understand now — Resume Audio
-              </button>
+              <button onClick={handleCloseReframe} className="cognify-btn-success" style={{ padding: '14px 40px' }}>✅ Resume</button>
             </div>
           </div>
         </div>

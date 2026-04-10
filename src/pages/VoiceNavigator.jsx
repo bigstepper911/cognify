@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as pdfjsLib from 'pdfjs-dist';
-import { Mic, FileText, ArrowLeft, Brain, CheckCircle } from 'lucide-react';
+import { Mic, FileText, ArrowLeft, Brain, CheckCircle, Loader } from 'lucide-react';
 import { generatePopQuiz, gradeAnswer, reframeContent } from '../utils/gemini';
 import { auth } from '../firebase';
 import { loadUserData, saveFocusCoins } from '../utils/db';
@@ -12,70 +12,19 @@ const VoiceNavigator = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const speechSynthRef = useRef(window.speechSynthesis);
+  const isListeningRef = useRef(false);
 
-  // -- Core State --
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [status, setStatus] = useState("waiting"); // waiting, uploaded, reading, quiz, reframe, done
-  const [statusMessage, setStatusMessage] = useState("Press spacebar to upload a PDF");
+  const [status, setStatus] = useState("waiting");
+  const [statusMessage, setStatusMessage] = useState("Press spacebar or say 'Upload' to begin");
   const [focusCoins, setFocusCoins] = useState(0);
 
-  // -- Paragraphs --
   const [paragraphs, setParagraphs] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-
-  // -- Quiz --
-  const [quizQuestion, setQuizQuestion] = useState("");
-  const [quizAttempts, setQuizAttempts] = useState(0);
-
-  // -- Check-in tracking --
   const [checkInCount, setCheckInCount] = useState(0);
+  const [lastHeard, setLastHeard] = useState("");
 
-  // =============================================
-  // SPEAK ENGINE
-  // =============================================
-  const speak = useCallback((text, onEnd) => {
-    speechSynthRef.current.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.95;
-    utterance.pitch = 1;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      if (onEnd) onEnd();
-    };
-    speechSynthRef.current.speak(utterance);
-  }, []);
-
-  // =============================================
-  // LISTEN ENGINE (One-shot voice input)
-  // =============================================
-  const listenForResponse = useCallback(() => {
-    return new Promise((resolve) => {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) { resolve(""); return; }
-
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = 'en-US';
-
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript.toLowerCase().trim();
-        resolve(transcript);
-      };
-      recognition.onerror = () => resolve("");
-      recognition.onend = () => {}; // handled by onresult
-      
-      // Small delay so TTS finishes before mic opens
-      setTimeout(() => {
-        try { recognition.start(); } catch (e) { resolve(""); }
-      }, 500);
-    });
-  }, []);
-
-  // =============================================
-  // LOAD COINS
-  // =============================================
+  // Load coins
   useEffect(() => {
     const fetchCoins = async () => {
       if (auth.currentUser) {
@@ -86,32 +35,92 @@ const VoiceNavigator = () => {
     fetchCoins();
   }, []);
 
-  // =============================================
-  // WELCOME MESSAGE
-  // =============================================
-  useEffect(() => {
-    speak("Voice Navigator activated. This is a fully hands-free learning experience. Press the spacebar to upload a P D F document. Or say upload.");
-    return () => speechSynthRef.current.cancel();
+  // ===== SPEAK — then listen for response after done =====
+  const speak = useCallback((text, onEnd) => {
+    return new Promise((resolve) => {
+      speechSynthRef.current.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.95;
+      utterance.pitch = 1;
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        if (onEnd) onEnd();
+        resolve();
+      };
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        resolve();
+      };
+      speechSynthRef.current.speak(utterance);
+    });
+  }, []);
+
+  // ===== LISTEN — waits for one voice input =====
+  const listenOnce = useCallback((prompt) => {
+    return new Promise(async (resolve) => {
+      // Speak the prompt first
+      if (prompt) {
+        await speak(prompt);
+      }
+
+      // Small delay to let TTS fully stop
+      await new Promise(r => setTimeout(r, 600));
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) { resolve(""); return; }
+
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      let resolved = false;
+      const timeout = setTimeout(() => {
+        if (!resolved) { resolved = true; try { recognition.stop(); } catch(e) {} resolve(""); }
+      }, 8000); // 8 second timeout
+
+      recognition.onresult = (event) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          const transcript = event.results[0][0].transcript.toLowerCase().trim();
+          console.log("Voice heard:", transcript);
+          setLastHeard(transcript);
+          resolve(transcript);
+        }
+      };
+
+      recognition.onerror = (e) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          console.log("Listen error:", e.error);
+          resolve("");
+        }
+      };
+
+      recognition.onend = () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          resolve("");
+        }
+      };
+
+      try { recognition.start(); } catch(e) { resolve(""); }
+    });
   }, [speak]);
 
-  // =============================================
-  // KEYBOARD: SPACEBAR TO UPLOAD
-  // =============================================
+  // ===== WELCOME =====
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.code === 'Space' && status === 'waiting') {
-        e.preventDefault();
-        openFileUpload();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [status]);
+    speak("Voice Navigator activated. This is a fully hands-free learning experience. Press the spacebar to upload a document. Or say upload.");
+    startBackgroundListener();
+    return () => speechSynthRef.current.cancel();
+  }, []);
 
-  // =============================================
-  // ALWAYS-ON VOICE COMMANDS
-  // =============================================
-  useEffect(() => {
+  // ===== BACKGROUND LISTENER (for upload command) =====
+  const startBackgroundListener = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
@@ -123,31 +132,59 @@ const VoiceNavigator = () => {
     recognition.onresult = (event) => {
       const last = event.results[event.results.length - 1];
       const command = last[0].transcript.toLowerCase().trim();
+      console.log("BG command:", command);
+      setLastHeard(command);
 
-      if (status === 'waiting' && command.includes("upload")) {
+      if (isSpeaking) return; // Don't process while speaking
+
+      if (command.includes("upload") || command.includes("open")) {
+        try { recognition.stop(); } catch(e) {}
         openFileUpload();
       } else if (command.includes("go back") || command.includes("home") || command.includes("exit")) {
         speechSynthRef.current.cancel();
+        try { recognition.stop(); } catch(e) {}
         navigate('/');
       }
     };
 
-    recognition.onend = () => {
-      try { recognition.start(); } catch (e) {}
+    recognition.onerror = (e) => {
+      if (e.error !== 'no-speech' && e.error !== 'aborted') {
+        console.error("BG voice error:", e.error);
+      }
     };
 
-    try { recognition.start(); } catch (e) {}
-    return () => { try { recognition.stop(); } catch (e) {} };
-  }, [status, navigate]);
+    recognition.onend = () => {
+      // Only restart if we're still waiting for upload
+      if (status === 'waiting') {
+        setTimeout(() => {
+          try { recognition.start(); } catch(e) {}
+        }, 1500);
+      }
+    };
 
-  // =============================================
-  // FILE UPLOAD
-  // =============================================
+    setTimeout(() => {
+      try { recognition.start(); } catch(e) {}
+    }, 3000); // Wait for welcome message to finish
+  };
+
+  // ===== SPACEBAR =====
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.code === 'Space' && status === 'waiting') {
+        e.preventDefault();
+        openFileUpload();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [status]);
+
+  // ===== FILE UPLOAD =====
   const openFileUpload = () => {
     speak("Opening file browser. Please select your document.");
     setTimeout(() => {
       if (fileInputRef.current) fileInputRef.current.click();
-    }, 1500);
+    }, 2000);
   };
 
   const handleFileUpload = async (event) => {
@@ -159,7 +196,7 @@ const VoiceNavigator = () => {
 
     setStatus("uploaded");
     setStatusMessage("Scanning document...");
-    speak("Scanning document. Please wait.");
+    await speak("Scanning document. Please wait.");
 
     const reader = new FileReader();
     reader.onload = async function () {
@@ -180,10 +217,11 @@ const VoiceNavigator = () => {
         localStorage.setItem("cognify_learning_text", fullText.trim());
         localStorage.setItem("cognify_paragraphs", JSON.stringify(chunks));
 
-        setStatusMessage(`Document loaded! ${pdf.numPages} pages, ${chunks.length} sections.`);
-        speak(`Document scanned successfully. ${pdf.numPages} pages found with ${chunks.length} learning sections. Starting your audio lesson now.`, () => {
-          startReadingLoop(chunks, 0);
-        });
+        setStatusMessage(`${pdf.numPages} pages, ${chunks.length} sections found.`);
+        await speak(`Document scanned. ${pdf.numPages} pages with ${chunks.length} sections. Starting your audio lesson now.`);
+
+        // Start the reading loop
+        readSection(chunks, 0);
       } catch (error) {
         speak("Error reading document. Please try again.");
       }
@@ -191,14 +229,18 @@ const VoiceNavigator = () => {
     reader.readAsArrayBuffer(file);
   };
 
-  // =============================================
-  // THE MAIN READING LOOP (Fully Voice-Driven)
-  // =============================================
-  const startReadingLoop = async (chunks, index) => {
+  // ===== THE READING LOOP =====
+  const readSection = async (chunks, index) => {
     if (index >= chunks.length) {
       setStatus("done");
-      setStatusMessage("You've completed all sections!");
-      speak(`Congratulations! You have completed all ${chunks.length} sections. You earned ${focusCoins} focus coins total. Great job! Say go back to return to the dashboard.`);
+      setStatusMessage("All sections complete!");
+      await speak(`Congratulations! You completed all ${chunks.length} sections and earned ${focusCoins} focus coins. Say go back to return to the dashboard.`);
+
+      // Listen for "go back"
+      const response = await listenOnce("Say go back when you're ready.");
+      if (response.includes("back") || response.includes("home")) {
+        navigate('/');
+      }
       return;
     }
 
@@ -207,59 +249,87 @@ const VoiceNavigator = () => {
     setStatusMessage(`Reading section ${index + 1} of ${chunks.length}`);
 
     // Read the paragraph
-    await new Promise((resolve) => {
-      speak(`Section ${index + 1}. ${chunks[index]}`, resolve);
-    });
+    await speak(`Section ${index + 1}. ${chunks[index]}`);
 
-    // Proactive check-in every 2 paragraphs
+    // Check-in every 2 paragraphs
     if ((index + 1) % 2 === 0) {
       setCheckInCount(prev => prev + 1);
-      setStatus("quiz");
+      setStatus("checkin");
       setStatusMessage("Check-in: Did you understand?");
 
-      await new Promise((resolve) => {
-        speak("Quick check. Did you understand that section? Say yes or no.", resolve);
-      });
+      const response = await listenOnce("Did you understand that section? Say yes or no.");
 
-      const response = await listenForResponse();
-
-      if (response.includes("no") || response.includes("confused") || response.includes("don't")) {
-        // Trigger reframe
+      if (response.includes("no") || response.includes("confused") || response.includes("don't") || response.includes("didn't")) {
         setStatus("reframe");
-        setStatusMessage("Generating simpler explanation...");
-        speak("Let me explain it differently.");
+        setStatusMessage("Explaining differently...");
+
+        await speak("Let me explain it differently.");
 
         const reframe = await reframeContent(chunks[index]);
-        await new Promise((resolve) => {
-          speak(reframe, resolve);
-        });
+        await speak(reframe);
 
-        // Award coins and move on
         const newTotal = focusCoins + 5;
         setFocusCoins(newTotal);
         if (auth.currentUser) await saveFocusCoins(auth.currentUser.uid, newTotal);
 
-        startReadingLoop(chunks, index + 1);
+        await speak("Moving to the next section.");
+        readSection(chunks, index + 1);
+      } else if (response.includes("repeat") || response.includes("again")) {
+        await speak("Repeating that section.");
+        readSection(chunks, index); // Same index
       } else {
-        // Understood — award coins and continue
+        // Yes or anything else = understood
         const newTotal = focusCoins + 5;
         setFocusCoins(newTotal);
         if (auth.currentUser) await saveFocusCoins(auth.currentUser.uid, newTotal);
 
-        speak("Great! Moving to the next section.", () => {
-          startReadingLoop(chunks, index + 1);
-        });
+        await speak("Great! Moving on.");
+        readSection(chunks, index + 1);
       }
     } else {
-      // No check-in — just move to next
-      startReadingLoop(chunks, index + 1);
+      // No check-in — ask if they want to continue or control
+      setStatus("waiting-command");
+      setStatusMessage("Listening for command...");
+
+      const response = await listenOnce("Say next to continue, repeat to hear again, or explain for a simpler version.");
+
+      if (response.includes("repeat") || response.includes("again")) {
+        readSection(chunks, index);
+      } else if (response.includes("explain") || response.includes("help") || response.includes("simple")) {
+        setStatus("reframe");
+        setStatusMessage("Explaining simply...");
+        const reframe = await reframeContent(chunks[index]);
+        await speak(reframe);
+        readSection(chunks, index + 1);
+      } else if (response.includes("stop") || response.includes("pause")) {
+        setStatus("paused");
+        setStatusMessage("Paused. Say resume to continue.");
+        const resumeResponse = await listenOnce("Session paused. Say resume when you're ready.");
+        readSection(chunks, index + 1);
+      } else if (response.includes("back") || response.includes("home")) {
+        navigate('/');
+      } else {
+        // Default: move to next
+        readSection(chunks, index + 1);
+      }
     }
   };
 
-  // =============================================
-  // RENDER
-  // =============================================
+  // ===== RENDER =====
   const progressPercent = paragraphs.length > 0 ? Math.round(((currentIndex + 1) / paragraphs.length) * 100) : 0;
+
+  const statusColors = {
+    'waiting': { bg: 'linear-gradient(135deg, #4b0082, #6a1b9a)', icon: <Mic size={70} color="white" /> },
+    'uploaded': { bg: 'linear-gradient(135deg, #3498db, #2980b9)', icon: <FileText size={70} color="white" /> },
+    'reading': { bg: 'linear-gradient(135deg, #2ecc71, #27ae60)', icon: <Mic size={70} color="white" /> },
+    'checkin': { bg: 'linear-gradient(135deg, #f39c12, #e67e22)', icon: <Brain size={70} color="white" /> },
+    'reframe': { bg: 'linear-gradient(135deg, #9b59b6, #8e44ad)', icon: <Brain size={70} color="white" /> },
+    'waiting-command': { bg: 'linear-gradient(135deg, #1abc9c, #16a085)', icon: <Mic size={70} color="white" /> },
+    'paused': { bg: 'linear-gradient(135deg, #95a5a6, #7f8c8d)', icon: <Mic size={70} color="white" /> },
+    'done': { bg: 'linear-gradient(135deg, #ffd700, #ffb800)', icon: <CheckCircle size={70} color="white" /> },
+  };
+
+  const currentStyle = statusColors[status] || statusColors['waiting'];
 
   return (
     <div style={{
@@ -267,71 +337,85 @@ const VoiceNavigator = () => {
       minHeight: '100vh', fontFamily: "'Inter', sans-serif", padding: '40px', textAlign: 'center'
     }}>
 
-      {/* Back Button */}
+      {/* Back */}
       <button onClick={() => { speechSynthRef.current.cancel(); navigate('/'); }}
         className="cognify-btn-secondary" style={{ position: 'absolute', top: '20px', left: '20px' }}>
         <ArrowLeft size={18} /> Back
       </button>
 
-      {/* Focus Coins */}
+      {/* Coins */}
       <div className="cognify-coins" style={{ position: 'absolute', top: '20px', right: '20px' }}>
         🪙 {focusCoins}
       </div>
 
-      {/* Hidden File Input */}
       <input type="file" accept=".pdf" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
 
-      {/* Title */}
-      <h1 style={{ color: '#4b0082', fontSize: '36px', marginBottom: '8px' }}>Voice Navigator</h1>
-      <p style={{ color: '#888', fontSize: '16px', marginBottom: '40px' }}>100% Accessible — Hands-Free Learning</p>
+      <h1 style={{ color: '#4b0082', fontSize: '32px', marginBottom: '6px' }}>Voice Navigator</h1>
+      <p style={{ color: '#888', fontSize: '16px', marginBottom: '40px' }}>100% Hands-Free • Fully Accessible</p>
 
-      {/* Animated Mic */}
+      {/* Animated Orb */}
       <div className={isSpeaking ? 'pulse-glow' : ''} style={{
         width: '160px', height: '160px', borderRadius: '50%',
-        background: isSpeaking ? 'linear-gradient(135deg, #2ecc71, #27ae60)' : status === 'done' ? 'linear-gradient(135deg, #ffd700, #ffb800)' : 'linear-gradient(135deg, #4b0082, #6a1b9a)',
+        background: currentStyle.bg,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         margin: '0 auto 30px', transition: 'all 0.5s ease',
-        boxShadow: isSpeaking ? '0 0 50px rgba(46, 204, 113, 0.4)' : '0 0 30px rgba(75, 0, 130, 0.2)'
+        boxShadow: isSpeaking ? '0 0 60px rgba(46, 204, 113, 0.4)' : '0 0 30px rgba(75, 0, 130, 0.2)'
       }}>
-        {status === 'done' ? <CheckCircle size={70} color="white" /> :
-         status === 'reframe' ? <Brain size={70} color="white" /> :
-         <Mic size={70} color="white" />}
+        {currentStyle.icon}
       </div>
 
-      {/* Status */}
-      <div className="cognify-card" style={{ maxWidth: '500px', width: '100%', padding: '24px' }}>
-        <div className={`cognify-status ${status === 'reading' ? 'focused' : status === 'quiz' ? 'distracted' : 'remediation'}`}
-          style={{ marginBottom: '16px', display: 'inline-block' }}>
-          {status.toUpperCase()}
+      {/* Status Card */}
+      <div className="cognify-card" style={{ maxWidth: '520px', width: '100%', padding: '28px' }}>
+        <div className={`cognify-status ${status === 'reading' || status === 'waiting-command' ? 'focused' : status === 'checkin' ? 'remediation' : 'distracted'}`}
+          style={{ marginBottom: '16px', display: 'inline-block', textTransform: 'uppercase', letterSpacing: '1px', fontSize: '12px' }}>
+          {status.replace('-', ' ')}
         </div>
+
         <p style={{ fontSize: '18px', fontWeight: 600, color: '#1a1a2e', marginBottom: '8px' }}>{statusMessage}</p>
+
+        {lastHeard && (
+          <div style={{ fontSize: '13px', color: '#888', padding: '8px 16px', backgroundColor: '#f8f9fa', borderRadius: '8px', marginTop: '12px' }}>
+            🎙️ Heard: "{lastHeard}"
+          </div>
+        )}
 
         {paragraphs.length > 0 && (
           <>
-            <div className="cognify-focus-bar" style={{ margin: '16px 0' }}>
+            <div className="cognify-focus-bar" style={{ margin: '20px 0 8px' }}>
               <div className="cognify-focus-fill" style={{ width: `${progressPercent}%`, backgroundColor: '#4b0082' }} />
             </div>
-            <p style={{ fontSize: '13px', color: '#999' }}>
-              Section {currentIndex + 1} of {paragraphs.length} • {progressPercent}% complete • {checkInCount} check-ins
+            <p style={{ fontSize: '12px', color: '#999' }}>
+              Section {currentIndex + 1} of {paragraphs.length} • {progressPercent}% • {checkInCount} check-ins
             </p>
           </>
         )}
 
         {status === 'waiting' && (
-          <p style={{ fontSize: '14px', color: '#aaa', marginTop: '16px' }}>
-            Press <span style={{ backgroundColor: '#4b0082', color: 'white', padding: '4px 12px', borderRadius: '6px', fontWeight: 600 }}>Spacebar</span> or say "Upload"
-          </p>
+          <div style={{ marginTop: '20px' }}>
+            <p style={{ fontSize: '14px', color: '#aaa' }}>
+              Press <span style={{ backgroundColor: '#4b0082', color: 'white', padding: '4px 14px', borderRadius: '6px', fontWeight: 600 }}>Spacebar</span> or say <b>"Upload"</b>
+            </p>
+          </div>
+        )}
+
+        {isSpeaking && (
+          <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#2ecc71', fontSize: '13px' }}>
+            <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} />
+            Speaking...
+          </div>
         )}
       </div>
 
-      {/* Instructions */}
-      <div style={{ marginTop: '40px', maxWidth: '400px', width: '100%' }}>
-        <div className="cognify-card" style={{ textAlign: 'left', fontSize: '13px', color: '#888', lineHeight: 2 }}>
-          <h4 style={{ color: '#4b0082', marginBottom: '8px', fontSize: '14px' }}>Voice Commands</h4>
-          <div><b>"Upload"</b> — open file browser</div>
-          <div><b>"Yes" / "No"</b> — answer check-ins</div>
-          <div><b>"Go back"</b> — return to dashboard</div>
-        </div>
+      {/* Voice Commands Reference */}
+      <div className="cognify-card" style={{ marginTop: '30px', maxWidth: '400px', width: '100%', textAlign: 'left', fontSize: '13px', color: '#888', lineHeight: 2 }}>
+        <h4 style={{ color: '#4b0082', marginBottom: '8px', fontSize: '14px' }}>🎙️ Voice Commands</h4>
+        <div><b>"Upload"</b> — open file browser</div>
+        <div><b>"Next"</b> — continue to next section</div>
+        <div><b>"Repeat"</b> — hear section again</div>
+        <div><b>"Explain"</b> — simpler explanation</div>
+        <div><b>"Yes"</b> / <b>"No"</b> — answer check-ins</div>
+        <div><b>"Pause"</b> / <b>"Resume"</b></div>
+        <div><b>"Go back"</b> — return to dashboard</div>
       </div>
     </div>
   );
