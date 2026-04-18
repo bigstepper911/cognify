@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as pdfjsLib from 'pdfjs-dist';
-import { Mic, FileText, ArrowLeft, Brain, CheckCircle, Loader } from 'lucide-react';
+import { Mic, FileText, ArrowLeft, Brain, CheckCircle } from 'lucide-react';
 import { generatePopQuiz, gradeAnswer, reframeContent } from '../utils/gemini';
 import { auth } from '../firebase';
 import { loadUserData, saveFocusCoins } from '../utils/db';
@@ -12,7 +12,6 @@ const VoiceNavigator = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const speechSynthRef = useRef(window.speechSynthesis);
-  const isListeningRef = useRef(false);
 
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [status, setStatus] = useState("waiting");
@@ -23,6 +22,9 @@ const VoiceNavigator = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [checkInCount, setCheckInCount] = useState(0);
   const [lastHeard, setLastHeard] = useState("");
+
+  const [isPaused, setIsPaused] = useState(false);
+  const isPausedRef = useRef(false);
 
   // Load coins
   useEffect(() => {
@@ -35,7 +37,7 @@ const VoiceNavigator = () => {
     fetchCoins();
   }, []);
 
-  // ===== SPEAK — then listen for response after done =====
+  // ===== SPEAK =====
   const speak = useCallback((text, onEnd) => {
     return new Promise((resolve) => {
       speechSynthRef.current.cancel();
@@ -56,15 +58,10 @@ const VoiceNavigator = () => {
     });
   }, []);
 
-  // ===== LISTEN — waits for one voice input =====
+  // ===== LISTEN ONCE =====
   const listenOnce = useCallback((prompt) => {
     return new Promise(async (resolve) => {
-      // Speak the prompt first
-      if (prompt) {
-        await speak(prompt);
-      }
-
-      // Small delay to let TTS fully stop
+      if (prompt) await speak(prompt);
       await new Promise(r => setTimeout(r, 600));
 
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -78,7 +75,7 @@ const VoiceNavigator = () => {
       let resolved = false;
       const timeout = setTimeout(() => {
         if (!resolved) { resolved = true; try { recognition.stop(); } catch(e) {} resolve(""); }
-      }, 8000); // 8 second timeout
+      }, 8000);
 
       recognition.onresult = (event) => {
         if (!resolved) {
@@ -92,20 +89,11 @@ const VoiceNavigator = () => {
       };
 
       recognition.onerror = (e) => {
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(timeout);
-          console.log("Listen error:", e.error);
-          resolve("");
-        }
+        if (!resolved) { resolved = true; clearTimeout(timeout); resolve(""); }
       };
 
       recognition.onend = () => {
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(timeout);
-          resolve("");
-        }
+        if (!resolved) { resolved = true; clearTimeout(timeout); resolve(""); }
       };
 
       try { recognition.start(); } catch(e) { resolve(""); }
@@ -119,7 +107,7 @@ const VoiceNavigator = () => {
     return () => speechSynthRef.current.cancel();
   }, []);
 
-  // ===== BACKGROUND LISTENER (for upload command) =====
+  // ===== BACKGROUND LISTENER =====
   const startBackgroundListener = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
@@ -135,7 +123,29 @@ const VoiceNavigator = () => {
       console.log("BG command:", command);
       setLastHeard(command);
 
-      if (isSpeaking) return; // Don't process while speaking
+      // Pause handling
+      if (command.includes("pause") || command.includes("stop")) {
+        speechSynthRef.current.cancel();
+        setIsSpeaking(false);
+        setIsPaused(true);
+        isPausedRef.current = true;
+        setStatusMessage("Paused. Say 'resume' to continue.");
+        setStatus("paused");
+        return;
+      }
+
+      // Resume handling
+      if (command.includes("resume") || command.includes("continue") || command.includes("play")) {
+        if (isPausedRef.current) {
+          setIsPaused(false);
+          isPausedRef.current = false;
+          try { recognition.stop(); } catch(e) {}
+          readSection(paragraphs, currentIndex);
+          return;
+        }
+      }
+
+      if (isSpeaking) return;
 
       if (command.includes("upload") || command.includes("open")) {
         try { recognition.stop(); } catch(e) {}
@@ -154,30 +164,43 @@ const VoiceNavigator = () => {
     };
 
     recognition.onend = () => {
-      // Only restart if we're still waiting for upload
-      if (status === 'waiting') {
-        setTimeout(() => {
-          try { recognition.start(); } catch(e) {}
-        }, 1500);
-      }
+      setTimeout(() => {
+        try { recognition.start(); } catch(e) {}
+      }, 1500);
     };
 
     setTimeout(() => {
       try { recognition.start(); } catch(e) {}
-    }, 3000); // Wait for welcome message to finish
+    }, 3000);
   };
 
-  // ===== SPACEBAR =====
+  // ===== SPACEBAR: Upload / Pause / Resume =====
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.code === 'Space' && status === 'waiting') {
+      if (e.code === 'Space') {
         e.preventDefault();
-        openFileUpload();
+        if (status === 'waiting') {
+          openFileUpload();
+        } else if (isSpeaking) {
+          speechSynthRef.current.cancel();
+          setIsSpeaking(false);
+          setIsPaused(true);
+          isPausedRef.current = true;
+          setStatusMessage("Paused. Press spacebar or say 'resume' to continue.");
+          setStatus("paused");
+        } else if (isPausedRef.current) {
+          setIsPaused(false);
+          isPausedRef.current = false;
+          readSection(paragraphs, currentIndex);
+        }
+      } else if (e.code === 'Escape') {
+        speechSynthRef.current.cancel();
+        navigate('/');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [status]);
+  }, [status, isSpeaking, paragraphs, currentIndex]);
 
   // ===== FILE UPLOAD =====
   const openFileUpload = () => {
@@ -218,9 +241,8 @@ const VoiceNavigator = () => {
         localStorage.setItem("cognify_paragraphs", JSON.stringify(chunks));
 
         setStatusMessage(`${pdf.numPages} pages, ${chunks.length} sections found.`);
-        await speak(`Document scanned. ${pdf.numPages} pages with ${chunks.length} sections. Starting your audio lesson now.`);
+        await speak(`Document scanned. ${pdf.numPages} pages with ${chunks.length} sections. Starting your audio lesson now. You can say pause or press spacebar anytime to pause.`);
 
-        // Start the reading loop
         readSection(chunks, 0);
       } catch (error) {
         speak("Error reading document. Please try again.");
@@ -229,18 +251,21 @@ const VoiceNavigator = () => {
     reader.readAsArrayBuffer(file);
   };
 
-  // ===== THE READING LOOP =====
+  // ===== READING LOOP =====
   const readSection = async (chunks, index) => {
+    // Check if paused
+    if (isPausedRef.current) {
+      setStatusMessage("Paused. Press spacebar or say 'resume'.");
+      setStatus("paused");
+      return;
+    }
+
     if (index >= chunks.length) {
       setStatus("done");
       setStatusMessage("All sections complete!");
-      await speak(`Congratulations! You completed all ${chunks.length} sections and earned ${focusCoins} focus coins. Say go back to return to the dashboard.`);
-
-      // Listen for "go back"
-      const response = await listenOnce("Say go back when you're ready.");
-      if (response.includes("back") || response.includes("home")) {
-        navigate('/');
-      }
+      await speak(`Congratulations! You completed all ${chunks.length} sections and earned ${focusCoins} focus coins. Say go back to return.`);
+      const response = await listenOnce("Say go back when ready.");
+      if (response.includes("back") || response.includes("home")) navigate('/');
       return;
     }
 
@@ -248,8 +273,10 @@ const VoiceNavigator = () => {
     setStatus("reading");
     setStatusMessage(`Reading section ${index + 1} of ${chunks.length}`);
 
-    // Read the paragraph
     await speak(`Section ${index + 1}. ${chunks[index]}`);
+
+    // Check if paused during reading
+    if (isPausedRef.current) return;
 
     // Check-in every 2 paragraphs
     if ((index + 1) % 2 === 0) {
@@ -257,41 +284,39 @@ const VoiceNavigator = () => {
       setStatus("checkin");
       setStatusMessage("Check-in: Did you understand?");
 
-      const response = await listenOnce("Did you understand that section? Say yes or no.");
+      const response = await listenOnce("Did you understand that section? Say yes, no, or repeat.");
+
+      if (isPausedRef.current) return;
 
       if (response.includes("no") || response.includes("confused") || response.includes("don't") || response.includes("didn't")) {
         setStatus("reframe");
         setStatusMessage("Explaining differently...");
-
         await speak("Let me explain it differently.");
-
         const reframe = await reframeContent(chunks[index]);
         await speak(reframe);
-
         const newTotal = focusCoins + 5;
         setFocusCoins(newTotal);
         if (auth.currentUser) await saveFocusCoins(auth.currentUser.uid, newTotal);
-
         await speak("Moving to the next section.");
         readSection(chunks, index + 1);
       } else if (response.includes("repeat") || response.includes("again")) {
         await speak("Repeating that section.");
-        readSection(chunks, index); // Same index
+        readSection(chunks, index);
       } else {
-        // Yes or anything else = understood
         const newTotal = focusCoins + 5;
         setFocusCoins(newTotal);
         if (auth.currentUser) await saveFocusCoins(auth.currentUser.uid, newTotal);
-
         await speak("Great! Moving on.");
         readSection(chunks, index + 1);
       }
     } else {
-      // No check-in — ask if they want to continue or control
+      // Between sections — ask for command
       setStatus("waiting-command");
       setStatusMessage("Listening for command...");
 
-      const response = await listenOnce("Say next to continue, repeat to hear again, or explain for a simpler version.");
+      const response = await listenOnce("Say next, repeat, explain, or pause.");
+
+      if (isPausedRef.current) return;
 
       if (response.includes("repeat") || response.includes("again")) {
         readSection(chunks, index);
@@ -301,15 +326,14 @@ const VoiceNavigator = () => {
         const reframe = await reframeContent(chunks[index]);
         await speak(reframe);
         readSection(chunks, index + 1);
-      } else if (response.includes("stop") || response.includes("pause")) {
+      } else if (response.includes("pause") || response.includes("stop")) {
+        setIsPaused(true);
+        isPausedRef.current = true;
         setStatus("paused");
-        setStatusMessage("Paused. Say resume to continue.");
-        const resumeResponse = await listenOnce("Session paused. Say resume when you're ready.");
-        readSection(chunks, index + 1);
+        setStatusMessage("Paused. Say 'resume' or press spacebar.");
       } else if (response.includes("back") || response.includes("home")) {
         navigate('/');
       } else {
-        // Default: move to next
         readSection(chunks, index + 1);
       }
     }
@@ -325,7 +349,7 @@ const VoiceNavigator = () => {
     'checkin': { bg: 'linear-gradient(135deg, #f39c12, #e67e22)', icon: <Brain size={70} color="white" /> },
     'reframe': { bg: 'linear-gradient(135deg, #9b59b6, #8e44ad)', icon: <Brain size={70} color="white" /> },
     'waiting-command': { bg: 'linear-gradient(135deg, #1abc9c, #16a085)', icon: <Mic size={70} color="white" /> },
-    'paused': { bg: 'linear-gradient(135deg, #95a5a6, #7f8c8d)', icon: <Mic size={70} color="white" /> },
+    'paused': { bg: 'linear-gradient(135deg, #e67e22, #d35400)', icon: <Mic size={70} color="white" /> },
     'done': { bg: 'linear-gradient(135deg, #ffd700, #ffb800)', icon: <CheckCircle size={70} color="white" /> },
   };
 
@@ -337,13 +361,11 @@ const VoiceNavigator = () => {
       minHeight: '100vh', fontFamily: "'Inter', sans-serif", padding: '40px', textAlign: 'center'
     }}>
 
-      {/* Back */}
       <button onClick={() => { speechSynthRef.current.cancel(); navigate('/'); }}
         className="cognify-btn-secondary" style={{ position: 'absolute', top: '20px', left: '20px' }}>
         <ArrowLeft size={18} /> Back
       </button>
 
-      {/* Coins */}
       <div className="cognify-coins" style={{ position: 'absolute', top: '20px', right: '20px' }}>
         🪙 {focusCoins}
       </div>
@@ -359,14 +381,14 @@ const VoiceNavigator = () => {
         background: currentStyle.bg,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         margin: '0 auto 30px', transition: 'all 0.5s ease',
-        boxShadow: isSpeaking ? '0 0 60px rgba(46, 204, 113, 0.4)' : '0 0 30px rgba(75, 0, 130, 0.2)'
+        boxShadow: isSpeaking ? '0 0 60px rgba(46, 204, 113, 0.4)' : isPaused ? '0 0 40px rgba(230, 126, 34, 0.3)' : '0 0 30px rgba(75, 0, 130, 0.2)'
       }}>
         {currentStyle.icon}
       </div>
 
       {/* Status Card */}
       <div className="cognify-card" style={{ maxWidth: '520px', width: '100%', padding: '28px' }}>
-        <div className={`cognify-status ${status === 'reading' || status === 'waiting-command' ? 'focused' : status === 'checkin' ? 'remediation' : 'distracted'}`}
+        <div className={`cognify-status ${status === 'reading' || status === 'waiting-command' ? 'focused' : status === 'checkin' ? 'remediation' : status === 'paused' ? 'remediation' : ''}`}
           style={{ marginBottom: '16px', display: 'inline-block', textTransform: 'uppercase', letterSpacing: '1px', fontSize: '12px' }}>
           {status.replace('-', ' ')}
         </div>
@@ -398,15 +420,23 @@ const VoiceNavigator = () => {
           </div>
         )}
 
-        {isSpeaking && (
-          <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#2ecc71', fontSize: '13px' }}>
-            <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} />
-            Speaking...
+        {isPaused && (
+          <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+            <p style={{ fontSize: '15px', color: '#e67e22', fontWeight: 600 }}>⏸️ Session Paused</p>
+            <p style={{ fontSize: '13px', color: '#aaa' }}>
+              Press <span style={{ backgroundColor: '#4b0082', color: 'white', padding: '4px 14px', borderRadius: '6px', fontWeight: 600 }}>Spacebar</span> or say <b>"Resume"</b>
+            </p>
+          </div>
+        )}
+
+        {isSpeaking && !isPaused && (
+          <div style={{ marginTop: '16px', fontSize: '13px', color: '#2ecc71', fontWeight: 500 }}>
+            🔊 Speaking...
           </div>
         )}
       </div>
 
-      {/* Voice Commands Reference */}
+      {/* Voice Commands */}
       <div className="cognify-card" style={{ marginTop: '30px', maxWidth: '400px', width: '100%', textAlign: 'left', fontSize: '13px', color: '#888', lineHeight: 2 }}>
         <h4 style={{ color: '#4b0082', marginBottom: '8px', fontSize: '14px' }}>🎙️ Voice Commands</h4>
         <div><b>"Upload"</b> — open file browser</div>
@@ -414,8 +444,12 @@ const VoiceNavigator = () => {
         <div><b>"Repeat"</b> — hear section again</div>
         <div><b>"Explain"</b> — simpler explanation</div>
         <div><b>"Yes"</b> / <b>"No"</b> — answer check-ins</div>
-        <div><b>"Pause"</b> / <b>"Resume"</b></div>
+        <div><b>"Pause"</b> / <b>"Resume"</b> — control playback</div>
         <div><b>"Go back"</b> — return to dashboard</div>
+        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #eee' }}>
+          <b>Spacebar</b> — upload / pause / resume<br/>
+          <b>Escape</b> — go back to dashboard
+        </div>
       </div>
     </div>
   );
